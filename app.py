@@ -115,7 +115,9 @@ def perguntar():
     user_id = session["user_id"]
 
     if not pergunta:
-        return jsonify({'resposta': 'Por favor, digite uma pergunta válida.'}), 400
+       if "direito do consumidor" not in pergunta.lower():
+        return jsonify({'resposta': 'Desculpe, só posso responder perguntas relacionadas a Direito do Consumidor.'}), 400
+    user_id = session["user_id"]
 
     contexto = buscar_trechos_relevantes(pergunta)
 
