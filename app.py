@@ -112,35 +112,78 @@ def index():
 def perguntar():
     data = request.get_json()
     pergunta = data.get('pergunta')
-    user_id = session["user_id"]
+    historico = data.get('historico', [])  # histórico opcional
 
     if not pergunta:
-       if "direito do consumidor" not in pergunta.lower():
-        return jsonify({'resposta': 'Desculpe, só posso responder perguntas relacionadas a Direito do Consumidor.'}), 400
-    user_id = session["user_id"]
-
-    contexto = buscar_trechos_relevantes(pergunta)
-
-    mensagens = [
-        {"role": "system", "content": "Você é um assistente jurídico. Responda com base no material fornecido."},
-        {"role": "user", "content": f"Base de conhecimento:\n{contexto}\n\nPergunta: {pergunta}"}
-    ]
+        return jsonify({"resposta": "Desculpe, não consegui entender.", "sugestoes": []})
 
     try:
+        mensagens = [
+            {
+                "role": "system",
+                "content": (
+                    "Você é um assistente jurídico especializado exclusivamente em Direito do Consumidor, com base na legislação brasileira.\n\n"
+                    "Seu papel é responder perguntas com linguagem técnico-jurídica clara, objetiva e acessível, mantendo um tom sério, respeitoso e com estilo acadêmico.\n\n"
+                    "Sempre que possível:\n"
+                    "- Cite a norma legal relevante (com nome, número e artigo).\n"
+                    "- Indique se a resposta depende de análise do caso concreto.\n"
+                    "- Finalize com uma orientação prática, como: 'Recomenda-se buscar orientação jurídica especializada.'\n\n"
+                    "Se a pergunta estiver fora do escopo do Direito do Consumidor, responda de forma educada: \n"
+                    "'Desculpe, só posso responder perguntas relacionadas ao Direito do Consumidor.'\n\n"
+                    "Nunca responda perguntas fora desse tema."
+                )
+            }
+        ]
+
+        # Adiciona o histórico anterior à conversa
+        for m in historico:
+            mensagens.append({
+                "role": "user" if m["autor"] == "user" else "assistant",
+                "content": m["mensagem"]
+            })
+
+        mensagens.append({"role": "user", "content": pergunta})
+
+        # Gera a resposta principal
         resposta = client.chat.completions.create(
-            model="gpt-4-1106-preview",
+            model="gpt-4",
             messages=mensagens,
-            temperature=0.4,
-            max_tokens=600
-        )
-        texto = resposta.choices[0].message.content.strip()
-        return jsonify({'resposta': texto})
+            temperature=0.7,
+            max_tokens=500
+        ).choices[0].message.content.strip()
+
+        # Gera sugestões com base na conversa
+        sugestao_prompt = mensagens + [
+            {"role": "user", "content": "Sugira 3 possíveis próximas mensagens que o usuário possa mandar sobre esse assunto."}
+        ]
+
+        sugestao_resposta = client.chat.completions.create(
+            model="gpt-4",
+            messages=sugestao_prompt,
+            temperature=0.7,
+            max_tokens=150
+        ).choices[0].message.content.strip()
+
+        # Extrai sugestões da resposta textual
+        sugestoes = [s.strip("-• \n") for s in sugestao_resposta.split("\n") if s.strip()]
+        sugestoes = sugestoes[:3]
+
+        return jsonify({
+            "resposta": resposta,
+            "sugestoes": sugestoes
+        })
+
     except Exception as e:
-        print("Erro:", e)
-        return jsonify({'resposta': 'Erro ao processar a pergunta.'}), 500
+        print("Erro real:", e)
+        return jsonify({
+            "resposta": "Erro ao processar a pergunta.",
+            "sugestoes": []
+        })
 
 if __name__ == '__main__':
-    if not os.path.exists("base_embeddings/vetores.index"):
-        gerar_embeddings_e_salvar()
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=8000)
+
+
+
+
 
